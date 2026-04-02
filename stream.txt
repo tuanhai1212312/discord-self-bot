@@ -1,0 +1,5 @@
+stream_url=https://www.twitch.tv/thai2kk_
+image_url=https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQkQ7v9goklfcVP8LS1zSdOsatlR6SRCkmceA&s
+line1=Welcome to my profile
+line2=Pham Tuan Hai
+line3=❤️ Developer From Nghe An 💙
