@@ -3,3 +3,7 @@ image_url=https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQkQ7v9goklfcVP8L
 line1=Welcome to my profile
 line2=Pham Tuan Hai
 line3=❤️ Developer From Nghe An 💙
+button1_label=My Discord Server
+button1_url=https://discord.com/invite/S5AkmD7ufB
+button2_label=Youtube
+button2_url=https://www.youtube.com/@GemloginTool1

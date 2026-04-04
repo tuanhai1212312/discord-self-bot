@@ -128,6 +128,22 @@ def load_stream_config():
                     config[key.strip()] = value.strip()
     except FileNotFoundError:
         return None
+
+    errors = []
+    if not config.get("button1_label"):
+        errors.append("Cannot find button1_label in stream.txt")
+    if not config.get("button1_url"):
+        errors.append("Cannot find button1_url in stream.txt")
+    if not config.get("button2_label"):
+        errors.append("Cannot find button2_label in stream.txt")
+    if not config.get("button2_url"):
+        errors.append("Cannot find button2_url in stream.txt")
+
+    if errors:
+        for e in errors:
+            print(e)
+        return None
+
     return config
 
 
@@ -148,11 +164,22 @@ def get_external_asset(token, app_id, url):
 
 
 def build_activity(sc, app_id, token):
+    start_time = int(time.time()) - 99999
+
     activity = {
-        "name": sc.get("line1", "Streaming") or "Streaming",
-        "type": 1,
-        "url": sc.get("stream_url", "https://twitch.tv/discord"),
-        "timestamps": {"start": int(time.time())}
+        "name": sc.get("line1", "Playing") or "Playing",
+        "type": 0,
+        "timestamps": {"start": start_time},
+        "buttons": [
+            sc.get("button1_label"),
+            sc.get("button2_label")
+        ],
+        "metadata": {
+            "button_urls": [
+                sc.get("button1_url"),
+                sc.get("button2_url")
+            ]
+        }
     }
 
     if sc.get("line2"):
@@ -664,11 +691,10 @@ def main():
         else:
             sc = load_stream_config()
             if sc is None:
-                print("Cannot find stream.txt")
                 stream_enabled = False
             else:
-                if not sc.get("stream_url"):
-                    print("Cannot find stream_url in stream.txt")
+                if not sc.get("line1"):
+                    print("Cannot find line1 in stream.txt")
                     stream_enabled = False
                 else:
                     if sc.get("image_url") and not sc["image_url"].startswith("http"):
