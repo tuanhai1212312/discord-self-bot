@@ -1,4 +1,5 @@
 token=your discord token
 application_id=your application id
 autochangecustomstatus=True
+autochangestream=True
 stream=True

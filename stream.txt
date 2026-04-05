@@ -1,9 +1,15 @@
-stream_url=https://www.twitch.tv/thai2kk_
 image_url=https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQkQ7v9goklfcVP8LS1zSdOsatlR6SRCkmceA&s
-line1=Welcome to my profile
-line2=Pham Tuan Hai
-line3=❤️ Developer From Nghe An 💙
+line1=Pham Tuan Hai
+line2=❤️ Developer From Nghe An 💙
+line3=Welcome to my profile
+line1_2=⏰ {time} ✦ {date} 📅
+line2_2=💜 Work Time 24/7 🩵
+line3_2=🩷 No Reply = Busy 🧡
 button1_label=My Discord Server
 button1_url=https://discord.com/invite/S5AkmD7ufB
 button2_label=Youtube
 button2_url=https://www.youtube.com/@GemloginTool1
+button1_label_2=My Love
+button1_url_2=https://discord.com/invite/S5AkmD7ufB
+button2_label_2=Subscribe my channel
+button2_url_2=https://www.youtube.com/@GemloginTool1

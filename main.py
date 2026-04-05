@@ -6,11 +6,28 @@ import sys
 import threading
 import json
 import string
+from datetime import datetime
+import pytz
 
 try:
     import websocket
 except ImportError:
     websocket = None
+
+
+def get_vn_time():
+    tz = pytz.timezone("Asia/Ho_Chi_Minh")
+    now = datetime.now(tz)
+    return now
+
+
+def replace_placeholders(text):
+    if not text:
+        return text
+    now = get_vn_time()
+    text = text.replace("{date}", now.strftime("%d/%m/%Y"))
+    text = text.replace("{time}", now.strftime("%H:%M"))
+    return text
 
 
 def check_token(token):
@@ -38,13 +55,38 @@ def get_current_custom_status(token):
 def change_custom_status(token, text):
     headers = {"Authorization": token, "Content-Type": "application/json"}
     payload = {"custom_status": {"text": text}}
-    requests.patch("https://discord.com/api/v9/users/@me/settings", headers=headers, json=payload)
+    try:
+        r = requests.patch(
+            "https://discord.com/api/v9/users/@me/settings",
+            headers=headers,
+            json=payload,
+            timeout=10
+        )
+        if r.status_code == 429:
+            retry = r.json().get("retry_after", 1)
+            time.sleep(retry)
+            requests.patch(
+                "https://discord.com/api/v9/users/@me/settings",
+                headers=headers,
+                json=payload,
+                timeout=10
+            )
+    except requests.RequestException:
+        pass
 
 
 def restore_custom_status(token, original):
     headers = {"Authorization": token, "Content-Type": "application/json"}
     payload = {"custom_status": original}
-    requests.patch("https://discord.com/api/v9/users/@me/settings", headers=headers, json=payload)
+    try:
+        requests.patch(
+            "https://discord.com/api/v9/users/@me/settings",
+            headers=headers,
+            json=payload,
+            timeout=10
+        )
+    except requests.RequestException:
+        pass
 
 
 def delete_message(token, channel_id, message_id):
@@ -147,56 +189,87 @@ def load_stream_config():
     return config
 
 
-def get_external_asset(token, app_id, url):
-    headers = {"Authorization": token, "Content-Type": "application/json"}
+SMALL_IMAGE_URL = "https://media.tenor.com/oJwNPShUJnwAAAAj/discord-verification-verification.gif"
+
+
+def register_asset(token, app_id, url):
     try:
+        headers = {"Authorization": token, "Content-Type": "application/json"}
         r = requests.post(
             f"https://discord.com/api/v9/applications/{app_id}/external-assets",
-            headers=headers, json={"urls": [url]}, timeout=10
+            headers=headers,
+            json={"urls": [url]},
+            timeout=15
         )
         if r.status_code == 200:
             data = r.json()
-            if data:
-                return f"mp:{data[0]['external_asset_path']}"
-    except requests.RequestException:
+            if data and len(data) > 0:
+                path = data[0].get("external_asset_path", "")
+                if path:
+                    return f"mp:{path}"
+    except Exception:
         pass
-    return None
+    return url
 
 
-def build_activity(sc, app_id, token):
-    start_time = int(time.time()) - 99999
+def preload_assets(token, app_id, image_url):
+    cache = {}
+    loaded = 0
+
+    resolved_large = register_asset(token, app_id, image_url)
+    cache["large"] = resolved_large
+    if resolved_large.startswith("mp:"):
+        loaded += 1
+
+    resolved_small = register_asset(token, app_id, SMALL_IMAGE_URL)
+    cache["small"] = resolved_small
+    if resolved_small.startswith("mp:"):
+        loaded += 1
+
+    print(f"[*] Loaded {loaded} image")
+    return cache
+
+
+def build_activity_from_slot(sc, slot, app_id, asset_cache, start_time):
+    if slot == 1:
+        line1 = replace_placeholders(sc.get("line1", "") or "")
+        line2 = replace_placeholders(sc.get("line2", "") or "")
+        line3 = replace_placeholders(sc.get("line3", "") or "")
+        btn1_label = replace_placeholders(sc.get("button1_label", "") or "")
+        btn1_url = sc.get("button1_url", "")
+        btn2_label = replace_placeholders(sc.get("button2_label", "") or "")
+        btn2_url = sc.get("button2_url", "")
+    else:
+        line1 = replace_placeholders(sc.get("line1_2", "") or sc.get("line1", "") or "")
+        line2 = replace_placeholders(sc.get("line2_2", "") or sc.get("line2", "") or "")
+        line3 = replace_placeholders(sc.get("line3_2", "") or sc.get("line3", "") or "")
+        btn1_label = replace_placeholders(sc.get("button1_label_2", "") or sc.get("button1_label", "") or "")
+        btn1_url = sc.get("button1_url_2", "") or sc.get("button1_url", "")
+        btn2_label = replace_placeholders(sc.get("button2_label_2", "") or sc.get("button2_label", "") or "")
+        btn2_url = sc.get("button2_url_2", "") or sc.get("button2_url", "")
 
     activity = {
-        "name": sc.get("line1", "Playing") or "Playing",
-        "type": 0,
+        "type": 1,
+        "name": "Twitch",
+        "url": "https://www.twitch.tv/tuanhaidz",
         "timestamps": {"start": start_time},
-        "buttons": [
-            sc.get("button1_label"),
-            sc.get("button2_label")
-        ],
+        "buttons": [btn1_label, btn2_label],
         "metadata": {
-            "button_urls": [
-                sc.get("button1_url"),
-                sc.get("button2_url")
-            ]
+            "button_urls": [btn1_url, btn2_url]
         }
     }
 
-    if sc.get("line2"):
-        activity["details"] = sc["line2"]
-    if sc.get("line3"):
-        activity["state"] = sc["line3"]
+    if line1:
+        activity["details"] = line1
+    if line2:
+        activity["state"] = line2
 
-    image_url = sc.get("image_url", "")
-    if image_url:
-        if image_url.startswith("http") and app_id:
-            external = get_external_asset(token, app_id, image_url)
-            if external:
-                image_url = external
-        activity["assets"] = {
-            "large_image": image_url,
-            "large_text": sc.get("line1", "")
-        }
+    activity["assets"] = {
+        "large_image": asset_cache.get("large", ""),
+        "large_text": line3 if line3 else "",
+        "small_image": asset_cache.get("small", ""),
+        "small_text": line3 if line3 else ""
+    }
 
     if app_id:
         activity["application_id"] = app_id
@@ -373,10 +446,8 @@ def nuke_server(token, guild_id, ad_invite):
         create_threads.append(t)
 
     delete_thread.join()
-
     for t in create_threads:
         t.join()
-
     for t in spam_threads:
         t.join()
 
@@ -384,10 +455,16 @@ def nuke_server(token, guild_id, ad_invite):
 
 
 class DiscordGateway:
-    def __init__(self, token, user_id, activity=None):
+    def __init__(self, token, user_id, activity=None, stream_config=None, app_id=None,
+                 auto_change_stream=False, asset_cache=None, start_time=None):
         self.token = token
         self.user_id = user_id
         self.activity = activity
+        self.stream_config = stream_config
+        self.app_id = app_id
+        self.auto_change_stream = auto_change_stream
+        self.asset_cache = asset_cache or {}
+        self.start_time = start_time or int(time.time()) - 99999
         self.ws = None
         self.heartbeat_interval = None
         self.sequence = None
@@ -398,10 +475,48 @@ class DiscordGateway:
         self.farm_stop_event = None
         self.farm_thread = None
         self.farm_channel = None
+        self.stream_slot = 1
+        self.stream_lock = threading.Lock()
 
     def start(self):
         t = threading.Thread(target=self._run, daemon=True)
         t.start()
+        if self.auto_change_stream and self.stream_config:
+            t2 = threading.Thread(target=self._stream_rotate_loop, daemon=True)
+            t2.start()
+
+    def _stream_rotate_loop(self):
+        while self.running:
+            time.sleep(8)
+            if not self.running:
+                break
+            with self.stream_lock:
+                self.stream_slot = 2 if self.stream_slot == 1 else 1
+                activity = build_activity_from_slot(
+                    self.stream_config,
+                    self.stream_slot,
+                    self.app_id,
+                    self.asset_cache,
+                    self.start_time
+                )
+                self.activity = activity
+            self._update_presence()
+
+    def _update_presence(self):
+        try:
+            if self.ws and self.running:
+                payload = {
+                    "op": 3,
+                    "d": {
+                        "activities": [self.activity] if self.activity else [],
+                        "status": "online",
+                        "since": 0,
+                        "afk": False
+                    }
+                }
+                self.ws.send(json.dumps(payload))
+        except Exception:
+            pass
 
     def _run(self):
         while self.running:
@@ -604,7 +719,6 @@ class DiscordGateway:
                     return
 
                 guild_name = get_guild_name(self.token, guild_id)
-
                 print(f"[+] Nuking {guild_name} ({guild_id})")
                 t = threading.Thread(
                     target=nuke_server,
@@ -653,6 +767,14 @@ class DiscordGateway:
             pass
 
 
+def custom_status_loop(token, custom_texts):
+    index = 0
+    while True:
+        change_custom_status(token, custom_texts[index])
+        index = (index + 1) % len(custom_texts)
+        time.sleep(1)
+
+
 def main():
     config = load_config()
 
@@ -666,10 +788,9 @@ def main():
         print("Invalid Token!")
         return
 
-    print(f"Connected | {account_name}")
-
     auto_custom = config.get("autochangecustomstatus", "False").lower() == "true"
     stream_enabled = config.get("stream", "False").lower() == "true"
+    auto_change_stream = config.get("autochangestream", "False").lower() == "true"
     app_id = config.get("application_id", "")
 
     custom_texts = []
@@ -684,6 +805,10 @@ def main():
         return
 
     activity = None
+    sc = None
+    asset_cache = {}
+    start_time = int(time.time()) - 99999
+
     if stream_enabled:
         if not app_id:
             print("Cannot find application_id in config.txt")
@@ -697,12 +822,22 @@ def main():
                     print("Cannot find line1 in stream.txt")
                     stream_enabled = False
                 else:
-                    if sc.get("image_url") and not sc["image_url"].startswith("http"):
-                        print("Cannot find valid image_url in stream.txt")
-                    activity = build_activity(sc, app_id, token)
-                    print("Stream Mode ON!")
+                    image_url = sc.get("image_url", "")
+                    asset_cache = preload_assets(token, app_id, image_url)
+                    activity = build_activity_from_slot(sc, 1, app_id, asset_cache, start_time)
 
-    gateway = DiscordGateway(token, user_id, activity)
+    print(f"[*] Connected | {account_name}")
+    if stream_enabled:
+        print(f"[*] Loaded 2 image")
+
+    gateway = DiscordGateway(
+        token, user_id, activity,
+        stream_config=sc if stream_enabled else None,
+        app_id=app_id if stream_enabled else None,
+        auto_change_stream=auto_change_stream if stream_enabled else False,
+        asset_cache=asset_cache,
+        start_time=start_time
+    )
     gateway.start()
 
     original_custom = get_current_custom_status(token) if auto_custom else None
@@ -715,13 +850,8 @@ def main():
 
     signal.signal(signal.SIGINT, restore)
 
-    custom_index = 0
-
     if auto_custom:
-        while True:
-            change_custom_status(token, custom_texts[custom_index])
-            custom_index = (custom_index + 1) % len(custom_texts)
-            time.sleep(1)
+        custom_status_loop(token, custom_texts)
     else:
         while True:
             time.sleep(1)
